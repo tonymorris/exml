@@ -5,7 +5,7 @@
 module Data.Xml.Parser where
 
 import Control.Applicative
-import Control.Lens(Optic, Choice, prism, set, over, (^?))
+import Control.Lens(Optic, Optic', Choice, prism, set, over, (^?))
 import Data.Bifunctor(Bifunctor(bimap))
 import Data.Bool(bool)
 import Data.Digit(Digit, digitC)
@@ -13,6 +13,7 @@ import Data.Functor.Alt(Alt((<!>)))
 import Data.Functor.Apply(Apply((<.>)))
 import Data.Functor.Bind(Bind((>>-)))
 import Data.List.NonEmpty(NonEmpty((:|)), toList)
+import Data.Void(Void)
 import Prelude
 
 type Input =
@@ -153,7 +154,7 @@ class SemiCharState s => CharState s where
 instance CharState () where
   emptyCharState =
     ()
-          
+
 failed ::
   e
   -> Parser s e a
@@ -161,23 +162,56 @@ failed e =
   Parser (\_ s -> 
     (s, ErrorResult e))
 
+data UnexpectedEofOr a =
+  UnexpectedEof
+  | UnexpectedEofOr a
+  deriving (Eq, Ord, Show)
+
+class AsUnexpectedEof p f x where
+  _UnexpectedEof ::
+    Optic' p f (x a) ()
+
+instance (Choice p, Applicative f) => AsUnexpectedEof p f UnexpectedEofOr where
+  _UnexpectedEof =
+    prism
+      (\() -> UnexpectedEof)
+      (\e -> case e of
+               UnexpectedEof ->
+                 Right ()
+               UnexpectedEofOr a ->
+                 Left (UnexpectedEofOr a))
+
+class AsUnexpectedEofOr p f x where
+  _UnexpectedEofOr ::
+    Optic p f (x a) (x b) a b
+
+instance (Choice p, Applicative f) => AsUnexpectedEofOr p f UnexpectedEofOr where
+  _UnexpectedEofOr =
+    prism
+      UnexpectedEofOr
+      (\e -> case e of
+               UnexpectedEof ->
+                 Left UnexpectedEof
+               UnexpectedEofOr a ->
+                 Right a)
+
 character ::
   SemiCharState s =>
-  Parser s () Char
+  Parser s (UnexpectedEofOr Void) Char
 character =
   Parser (\i s -> 
     case i of
       [] ->
-        (s, ErrorResult ())
+        (s, ErrorResult UnexpectedEof)
       h:t ->
         (updateCharState h s, ValueResult t h))
 
 list ::
   Parser s e a
+  -- ?always succeeds -- new parser type?
   -> Parser s e [a]
 list p =
   fmap toList (list1 p) <!> pure []  
-
 
 list1 ::
   Parser s e a
@@ -187,29 +221,70 @@ list1 p =
      t <- list p
      return (h :| t)
 
+data NotSatisfied =
+  NotSatisfied (Char -> Bool) Char
+
 satisfy ::
   SemiCharState s =>
   (Char -> Bool)
-  -> Parser s Bool Char
+  -> Parser s (UnexpectedEofOr NotSatisfied) Char
 satisfy f =
-  do c <- True .=. character
-     bool (failed False) (return c) (f c)
+  do c <- UnexpectedEof .=. character
+     bool (failed (UnexpectedEofOr (NotSatisfied f c))) (return c) (f c)
+
+data NotIs =
+  NotIs Char Char
+  deriving (Eq, Ord, Show)
 
 is ::
   SemiCharState s =>
   Char
-  -> Parser s Bool Char
+  -> Parser s (UnexpectedEofOr NotIs) Char
 is c =
-  satisfy (== c)
+  over _UnexpectedEofOr (\(NotSatisfied _ x) -> NotIs x c) .~. satisfy (== c)
+
+data NotDigit =
+  NotDigit Char
+  deriving (Eq, Ord, Show)
 
 digit ::
   SemiCharState s =>
-  Parser s Bool Digit
+  Parser s (UnexpectedEofOr NotDigit) Digit
 digit =
-  do c <- True .=. character
+  do c <- UnexpectedEof .=. character
      case c ^? digitC of
        Nothing ->
-         failed False
+         failed (UnexpectedEofOr (NotDigit c))
        Just d ->
          return d
   
+data Space =
+  Space -- 0x0020
+  | LineFeed -- 0x000a
+  | CarriageReturn -- 0x000d
+  | Tab -- 0x0009
+  | Ideographic -- 0x3000
+  deriving (Eq, Ord, Show)
+
+data NotSpace =
+  NotSpace Char
+  deriving (Eq, Ord, Show)
+
+space ::
+  SemiCharState s =>
+  Parser s (UnexpectedEofOr NotSpace) Space
+space =
+  do c <- UnexpectedEof .=. character
+     case c of
+       '\x0020' ->
+         return Space
+       '\x000a' ->
+         return LineFeed
+       '\x000d' ->
+         return CarriageReturn
+       '\x0009' ->
+         return Tab
+       '\x3000' ->
+         return Ideographic
+       _ ->
+         failed (UnexpectedEofOr (NotSpace c))
