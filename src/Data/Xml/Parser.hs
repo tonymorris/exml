@@ -141,11 +141,19 @@ class SemiCharState s where
     Char
     -> s
     -> s
+  
+instance SemiCharState () where
+  updateCharState _ () =
+    ()
 
 class SemiCharState s => CharState s where
   emptyCharState ::
     s
-  
+
+instance CharState () where
+  emptyCharState =
+    ()
+          
 failed ::
   e
   -> Parser s e a
