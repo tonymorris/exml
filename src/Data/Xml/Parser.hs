@@ -13,6 +13,7 @@ import Data.Functor.Alt(Alt((<!>)))
 import Data.Functor.Apply(Apply((<.>)))
 import Data.Functor.Bind(Bind((>>-)))
 import Data.List.NonEmpty(NonEmpty((:|)), toList)
+import Data.Traversable(Traversable(traverse))
 import Data.Void(Void)
 import Prelude
 
@@ -242,6 +243,13 @@ is ::
   -> Parser s (UnexpectedEofOr NotIs) Char
 is c =
   over _UnexpectedEofOr (\(NotSatisfied _ x) -> NotIs x c) .~. satisfy (== c)
+
+string ::
+  SemiCharState s =>
+  String
+  -> Parser s (UnexpectedEofOr NotIs) String
+string =
+  traverse is
 
 data NotDigit =
   NotDigit Char
