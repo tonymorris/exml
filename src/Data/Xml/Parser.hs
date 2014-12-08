@@ -296,3 +296,12 @@ space =
          return Ideographic
        _ ->
          failed (UnexpectedEofOr (NotSpace c))
+
+{-
+Error types
+* UnexpectedEof ~ ()
+* UnexpectedEofOrChar ~ Maybe Char
+* UnexpectedEofOrCharAnd a ~ Maybe (Char, a)
+
+-}
+
