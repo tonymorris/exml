@@ -15,7 +15,7 @@ import Data.Functor.Bind(Bind((>>-)))
 import Data.List.NonEmpty(NonEmpty((:|)), toList)
 import Data.Traversable(Traversable(traverse))
 import Data.Void(Void)
-import Prelude
+import Prelude8
 
 type Input =
   String
